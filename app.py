@@ -1,21 +1,19 @@
 import streamlit as st
 import pandas as pd
 
-# Configuração da página
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Liga Fiuzeira 25/26", layout="wide", page_icon="⚽")
 
-# --- ESTILOS ---
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🏆 Liga Fiuzeira Forever 25/26")
 st.subheader("Dashboard Oficial de Gestão")
 
-# --- FUNÇÕES DE LÓGICA ---
+# --- LÓGICA DE PONTOS EXTRA ---
 def calcular_pontos_extra(pts):
     if pts > 100: return 2
     if 75 <= pts <= 100: return 1
@@ -23,70 +21,117 @@ def calcular_pontos_extra(pts):
     if pts < 10: return -2
     return 0
 
-# --- BARRA LATERAL (ADMIN) ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Painel Admin")
-    st.info("Carrega o ficheiro CSV semanal da Liga Record.")
-    uploaded_file = st.file_uploader("Ficheiro da Ronda", type=["csv"])
+    uploaded_file = st.file_uploader("Ficheiro da Ronda (CSV Liga Record)", type=["csv"])
     
     st.divider()
-    st.write("📌 **Regras Ativas:**")
-    st.caption("✅ >100 pts: +2 | 75-100: +1")
-    st.caption("❌ 10-25 pts: -1 | <10: -2")
+    st.write("📌 **Regras do Campeonato:**")
+    st.caption("Vitória: 2 | Empate: 1 | Derrota: 0")
+    st.caption("✅ >100 pts: +2 | 75-100 pts: +1")
+    st.caption("❌ 10-25 pts: -1 | <10 pts: -2")
 
 # --- CONTEÚDO PRINCIPAL ---
 if uploaded_file:
-    # A Liga Record tem metadados nas primeiras 4 linhas
+    # Ler os dados da Liga Record
     df = pd.read_csv(uploaded_file, skiprows=4)
+    # Limpar espaços extra nos nomes das equipas (evita erros de cruzamento)
+    df['Equipa'] = df['Equipa'].str.strip()
     
-    # Limpeza e cálculos
+    # Calcular automaticamente os pontos extra de cada um na ronda atual
     df['Pts Extra'] = df['Pts Ronda'].apply(calcular_pontos_extra)
     
-    # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Liga Record", "⚔️ Campeonato", "🔥 Top Performance", "🍽️ Painel do Jantar"])
+    tab1, tab2, tab3 = st.tabs(["📊 Liga Record", "⚔️ Campeonato H2H (Jogos)", "🍽️ O Jantar"])
 
     with tab1:
         st.markdown("### Classificação Geral (Liga Record)")
         df_geral = df.sort_values(by="Pts Total", ascending=False).reset_index(drop=True)
         df_geral.index += 1
-        st.dataframe(df_geral[['Equipa', 'Treinador', 'Pts Ronda', 'Pts Total']], use_container_width=True)
+        st.dataframe(df_geral[['Equipa', 'Treinador', 'Pts Ronda', 'Pts Extra', 'Pts Total']], use_container_width=True)
 
     with tab2:
-        st.markdown("### Campeonato H2H (Confronto Direto)")
-        st.info("Para ativar os confrontos, na próxima versão vamos carregar o Calendário fixo.")
-        st.write("Resumo de Pontuação Extra desta Ronda:")
-        df_extra = df[df['Pts Extra'] != 0][['Treinador', 'Equipa', 'Pts Ronda', 'Pts Extra']].sort_values(by="Pts Extra", ascending=False)
-        st.table(df_extra)
+        st.markdown("### ⚔️ Máquina de Resultados do Campeonato")
+        st.info("Alinha aqui os confrontos desta semana. A App vai buscar as pontuações e calcula os vencedores e os bónus!")
+        
+        equipas_lista = df['Equipa'].tolist()
+        
+        # Criar a grelha de jogos interativa
+        if 'jogos' not in st.session_state:
+            meio = len(equipas_lista) // 2
+            st.session_state['jogos'] = pd.DataFrame({
+                'Equipa Casa': equipas_lista[:meio],
+                'Equipa Fora': equipas_lista[meio:]
+            })
+        
+        # Tabela onde podes escolher as equipas a partir de listas dropdown
+        jogos_editados = st.data_editor(
+            st.session_state['jogos'],
+            column_config={
+                "Equipa Casa": st.column_config.SelectboxColumn("🏠 Equipa Casa", options=equipas_lista, required=True),
+                "Equipa Fora": st.column_config.SelectboxColumn("✈️ Equipa Fora", options=equipas_lista, required=True)
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        if st.button("🔥 Calcular Resultados desta Jornada", type="primary"):
+            st.markdown("---")
+            st.markdown("### 🏁 Resultados Oficiais")
+            resultados = []
+            
+            for _, row in jogos_editados.iterrows():
+                casa = row['Equipa Casa']
+                fora = row['Equipa Fora']
+                
+                # Garantir que não está a jogar contra si mesmo e que as equipas existem
+                if casa and fora and casa != fora:
+                    # Ir buscar os pontos feitos na ronda
+                    pts_casa = df[df['Equipa'] == casa]['Pts Ronda'].values[0]
+                    pts_fora = df[df['Equipa'] == fora]['Pts Ronda'].values[0]
+                    
+                    # Ir buscar os pontos extra calculados
+                    extra_casa = df[df['Equipa'] == casa]['Pts Extra'].values[0]
+                    extra_fora = df[df['Equipa'] == fora]['Pts Extra'].values[0]
+                    
+                    # Lógica do Jogo (2, 1, 0)
+                    if pts_casa > pts_fora:
+                        res_casa, res_fora = 2, 0
+                    elif pts_casa < pts_fora:
+                        res_casa, res_fora = 0, 2
+                    else:
+                        res_casa, res_fora = 1, 1
+                        
+                    # Pontos Finais para a tabela do campeonato (Resultado do jogo + Pts Extra)
+                    total_casa = res_casa + extra_casa
+                    total_fora = res_fora + extra_fora
+                    
+                    resultados.append({
+                        "Equipa Casa": casa, 
+                        "Pts Ronda (Casa)": pts_casa, 
+                        "Pontos Campeonato (Casa)": f"{total_casa} pts",
+                        "VS": "⚔️",
+                        "Pontos Campeonato (Fora)": f"{total_fora} pts", 
+                        "Pts Ronda (Fora)": pts_fora, 
+                        "Equipa Fora": fora
+                    })
+            
+            df_resultados = pd.DataFrame(resultados)
+            st.dataframe(df_resultados, hide_index=True, use_container_width=True)
+            st.success("Tudo calculado! Vitórias, Derrotas, Empates e Bónus aplicados com sucesso.")
 
     with tab3:
+        st.markdown("### 🍽️ Gestão do Jantar")
+        df_jantar = df.sort_values(by="Pts Total", ascending=False).reset_index(drop=True)
+        meio = len(df_jantar) // 2
+        
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### 🔥 Top 5 Treinadores da Semana")
-            top5 = df.sort_values(by="Pts Ronda", ascending=False).head(5)
-            for i, row in top5.iterrows():
-                st.success(f"**{row['Treinador']}** - {row['Pts Ronda']} pts")
-        
+            st.success("👑 **Metade Superior (Comem de Graça)**")
+            st.table(df_jantar.iloc[:meio][['Treinador', 'Equipa']])
         with col2:
-            st.markdown("### 🚀 Recordes (Pontuação Alta)")
-            # Simulação de Top 10 (precisará de base de dados para ser persistente em todas as rondas)
-            st.write("Top 10 histórico em desenvolvimento...")
-
-    with tab4:
-        st.markdown("### 🍽️ Quem paga o jantar?")
-        # Lógica: Dividir a tabela ao meio
-        meio = len(df) // 2
-        pagam = df_geral.iloc[meio:]
-        recebem = df_geral.iloc[:meio]
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.warning("🍷 **Os que Recebem (Primeira Metade)**")
-            st.write(recebem[['Treinador', 'Equipa']])
-        with c2:
-            st.error("💸 **Os que PAGAM (Segunda Metade)**")
-            st.write(pagam[['Treinador', 'Equipa']])
-            if len(df) % 2 != 0:
-                st.info(f"💡 {df_geral.iloc[meio]['Treinador']} está no meio: paga apenas o seu!")
+            st.error("💸 **Metade Inferior (Abrem a Carteira)**")
+            st.table(df_jantar.iloc[meio:][['Treinador', 'Equipa']])
 
 else:
-    st.info("👋 Olá! À espera do upload do ficheiro da ronda para mostrar os dados.")
+    st.info("👋 Olá! À espera do upload do ficheiro CSV da Ronda no painel lateral.")
