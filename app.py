@@ -36,9 +36,13 @@ with st.sidebar:
 # --- CONTEÚDO PRINCIPAL ---
 if uploaded_file:
     # Ler os dados da Liga Record da semana
-    df = pd.read_csv(uploaded_file, skiprows=4)
-    df['Equipa'] = df['Equipa'].str.strip()
-    df['Pts Extra'] = df['Pts Ronda'].apply(calcular_pontos_extra)
+    try:
+        df = pd.read_csv(uploaded_file, skiprows=4)
+        df['Equipa'] = df['Equipa'].str.strip()
+        df['Pts Extra'] = df['Pts Ronda'].apply(calcular_pontos_extra)
+    except Exception as e:
+        st.error(f"Erro ao ler o ficheiro da Liga Record. Confirma se é o ficheiro correto. Erro: {e}")
+        st.stop()
     
     tab1, tab2, tab3, tab4 = st.tabs(["⚔️ 1. Resultados da Jornada", "🏆 2. Classificação Campeonato", "📊 3. Liga Record", "🍽️ 4. O Jantar"])
 
@@ -92,17 +96,17 @@ if uploaded_file:
                         
                         resultados.append({
                             "Equipa Casa": casa, 
-                            "Pts": pts_casa, 
+                            "Pts (Liga)": pts_casa, 
                             "Bónus": extra_casa,
-                            "🏆 Pts Camp": total_casa,
+                            "🏆 Pts Ganho": total_casa,
                             "VS": "⚔️",
-                            "🏆 Pts Camp ": total_fora, 
+                            "🏆 Pts Ganho ": total_fora, 
                             "Bónus ": extra_fora,
-                            "Pts ": pts_fora, 
+                            "Pts (Liga) ": pts_fora, 
                             "Equipa Fora": fora
                         })
                     except Exception as e:
-                        st.error(f"⚠️ Erro ao encontrar equipas. Confirma se os nomes no calendario.csv estão iguais aos da Liga Record. Erro: {e}")
+                        st.error(f"⚠️ Erro ao encontrar equipas. Confirma se os nomes '{casa}' e '{fora}' no calendario.csv estão iguais aos da Liga Record.")
                 
                 if resultados:
                     st.dataframe(pd.DataFrame(resultados), hide_index=True, use_container_width=True)
@@ -113,60 +117,4 @@ if uploaded_file:
                     for equipa, pts in pontos_ganhos.items():
                         if equipa in df_novo_hist['Equipa'].values:
                             df_novo_hist.loc[df_novo_hist['Equipa'] == equipa, 'Pts_Campeonato'] += pts
-                            df_novo_hist.loc[df_novo_hist['Equipa'] == equipa, 'Jogos'] += 1
-                    
-                    # Guardar em State para a Tab 2 usar
-                    st.session_state['novo_hist'] = df_novo_hist
-                    st.session_state['calculo_feito'] = True
-                    
-        else:
-            st.warning("⚠️ Faltam os ficheiros 'calendario.csv' e 'historico_campeonato.csv' no GitHub.")
-
-    with tab2:
-        st.markdown("### 🏆 Classificação do Campeonato (H2H)")
-        
-        if 'calculo_feito' in st.session_state and st.session_state['calculo_feito']:
-            df_atualizado = st.session_state['novo_hist'].sort_values(by="Pts_Campeonato", ascending=False).reset_index(drop=True)
-            df_atualizado.index += 1
-            st.dataframe(df_atualizado, use_container_width=True)
-            
-            st.markdown("---")
-            st.info("⬇️ **Passo Final da Semana:** Faz download deste ficheiro atualizado e arrasta-o para o teu GitHub (substituindo o antigo) para guardares estes resultados para a próxima jornada!")
-            
-            # Botão de Download do novo histórico
-            csv = df_atualizado.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Descarregar historico_campeonato.csv atualizado",
-                data=csv,
-                file_name='historico_campeonato.csv',
-                mime='text/csv',
-            )
-        else:
-            st.write("Calcula os resultados na Tab 1 para veres a classificação atualizada.")
-            if os.path.exists("historico_campeonato.csv"):
-                st.write("Classificação Atual (Antes de calcular a jornada):")
-                df_hist_view = pd.read_csv("historico_campeonato.csv").sort_values(by="Pts_Campeonato", ascending=False).reset_index(drop=True)
-                df_hist_view.index += 1
-                st.dataframe(df_hist_view)
-
-    with tab3:
-        st.markdown("### Classificação Geral (Liga Record)")
-        df_geral = df.sort_values(by="Pts Total", ascending=False).reset_index(drop=True)
-        df_geral.index += 1
-        st.dataframe(df_geral[['Equipa', 'Treinador', 'Pts Ronda', 'Pts Extra', 'Pts Total']], use_container_width=True)
-
-    with tab4:
-        st.markdown("### 🍽️ Gestão do Jantar")
-        df_jantar = df.sort_values(by="Pts Total", ascending=False).reset_index(drop=True)
-        meio = len(df_jantar) // 2
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.success("👑 **Metade Superior (Comem de Graça)**")
-            st.table(df_jantar.iloc[:meio][['Treinador', 'Equipa']])
-        with col2:
-            st.error("💸 **Metade Inferior (Abrem a Carteira)**")
-            st.table(df_jantar.iloc[meio:][['Treinador', 'Equipa']])
-
-else:
-    st.info("👋 Bem-vindo ao painel da Liga! À espera do upload do ficheiro CSV da Ronda...")
+                            df_novo_hist.loc[df_novo_hist['Equipa'] == equip
